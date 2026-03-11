@@ -1,0 +1,17 @@
+{
+  "name": "gst-portal",
+  "version": "1.0.0",
+  "description": "GST Tax Filing Portal",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "body-parser": "^1.20.4",
+    "dotenv": "^17.3.1",
+    "express": "^4.22.1",
+    "express-session": "^1.19.0",
+    "mysql2": "^3.18.2"
+  }
+}

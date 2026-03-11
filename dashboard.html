@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GST Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body onload="loadStats()">
+    <header class="top-header">
+        <div class="logo">GST Portal</div>
+        <div class="user"><a href="/logout">Logout</a></div>
+    </header>
+
+    <div class="container">
+        <div class="dashboard-cards">
+            <div class="card"><h3>Total Income</h3><p id="income">₹ 0</p></div>
+            <div class="card"><h3>Total GST</h3><p id="gst">₹ 0</p></div>
+            <div class="card"><h3>Returns Filed</h3><p id="returns">0</p></div>
+        </div>
+
+        <button onclick="showForm()">File New GST Return</button>
+
+        <div id="gstForm" class="gst-form" style="display:none; margin-top:20px;">
+            <h2>File GST Return</h2>
+            <form action="/calculate" method="POST">
+                <label>GST Number</label>
+                <input type="text" name="gst_number" required>
+                <label>Business Income</label>
+                <input type="number" name="income" step="0.01" required>
+                <label>GST Rate</label>
+                <select name="gst_rate" required>
+                    <option value="0.05">5%</option>
+                    <option value="0.12">12%</option>
+                    <option value="0.18">18%</option>
+                    <option value="0.28">28%</option>
+                </select>
+                <button type="submit">Submit GST</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function showForm() { document.getElementById("gstForm").style.display = "block"; }
+
+        function loadStats() {
+            fetch('/dashboard-data')
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById("income").innerText = `₹ ${data.total_income || 0}`;
+                    document.getElementById("gst").innerText = `₹ ${data.total_gst || 0}`;
+                    document.getElementById("returns").innerText = data.total_returns || 0;
+                });
+        }
+    </script>
+</body>
+</html>

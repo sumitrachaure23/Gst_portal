@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head><title>Admin Panel</title><link rel="stylesheet" href="style.css"></head>
+<body>
+    <h2>Global GST Records</h2>
+    <div id="data">Loading...</div>
+    <script>
+        fetch('/admin-data')
+        .then(res => {
+            if(res.status === 403) throw new Error("Unauthorized");
+            return res.json();
+        })
+        .then(data => {
+            let html = "<table border='1'><tr><th>Name</th><th>GST No</th><th>Income</th><th>GST</th><th>Date</th></tr>";
+            data.forEach(row => {
+                html += `<tr><td>${row.name}</td><td>${row.gst_number}</td><td>₹${row.income}</td><td>₹${row.gst_amount}</td><td>${new Date(row.created_at).toLocaleDateString()}</td></tr>`;
+            });
+            document.getElementById("data").innerHTML = html + "</table>";
+        })
+        .catch(err => document.getElementById("data").innerHTML = "Access Denied: Admin only.");
+    </script>
+</body>
+</html>
