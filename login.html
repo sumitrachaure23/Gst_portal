@@ -1,15 +1,87 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<title>Login</title>
-<link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login — GST Portal</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h2>Login</h2>
-<form action="/login" method="POST">
-<input type="email" name="email" placeholder="Email" required>
-<input type="password" name="password" placeholder="Password" required>
-<button type="submit">Login</button>
-</form>
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="auth-logo">
+            <div class="logo-icon">₹</div>
+            <h2>GST Portal</h2>
+            <p>Government Tax Filing System</p>
+        </div>
+
+        <h2>Welcome back</h2>
+        <p class="subtitle">Sign in to manage your GST returns</p>
+
+        <div id="alert-box"></div>
+
+        <form id="loginForm" action="/login" method="POST" novalidate>
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" name="email" placeholder="you@example.com" required autocomplete="email">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" placeholder="Your password" required autocomplete="current-password">
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="submitBtn">Sign In</button>
+        </form>
+
+        <div class="auth-footer">
+            Don't have an account? <a href="index.html">Register</a>
+        </div>
+    </div>
+</div>
+
+<script>
+    const form = document.getElementById('loginForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const alertBox = document.getElementById('alert-box');
+
+    function showAlert(message, type = 'error') {
+        alertBox.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+    }
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        alertBox.innerHTML = '';
+
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+
+        if (!email) return showAlert('Please enter your email address.');
+        if (!password) return showAlert('Please enter your password.');
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner"></span> Signing in…';
+
+        try {
+            const resp = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ email, password }),
+                redirect: 'follow'
+            });
+
+            if (resp.redirected) {
+                window.location.href = resp.url;
+            } else {
+                const text = await resp.text();
+                showAlert(text || 'Invalid email or password.');
+            }
+        } catch {
+            showAlert('Network error. Please try again.');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = 'Sign In';
+        }
+    });
+</script>
 </body>
 </html>
