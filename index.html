@@ -1,17 +1,93 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<title>GST Portal - Register</title>
-<link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register — GST Portal</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h2>Register</h2>
-<form action="/register" method="POST">
-<input type="text" name="name" placeholder="Name" required>
-<input type="email" name="email" placeholder="Email" required>
-<input type="password" name="password" placeholder="Password" required>
-<button type="submit">Register</button>
-</form>
-<a href="login.html">Login</a>
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="auth-logo">
+            <div class="logo-icon">₹</div>
+            <h2>GST Portal</h2>
+            <p>Government Tax Filing System</p>
+        </div>
+
+        <h2>Create account</h2>
+        <p class="subtitle">Start filing your GST returns online</p>
+
+        <div id="alert-box"></div>
+
+        <form id="registerForm" action="/register" method="POST" novalidate>
+            <div class="form-group">
+                <label for="name">Full Name</label>
+                <input type="text" id="name" name="name" placeholder="e.g. Rajesh Kumar" required autocomplete="name">
+            </div>
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" name="email" placeholder="you@example.com" required autocomplete="email">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" placeholder="Min. 8 characters" required autocomplete="new-password" minlength="8">
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="submitBtn">Create Account</button>
+        </form>
+
+        <div class="auth-footer">
+            Already have an account? <a href="login.html">Sign in</a>
+        </div>
+    </div>
+</div>
+
+<script>
+    const form = document.getElementById('registerForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const alertBox = document.getElementById('alert-box');
+
+    function showAlert(message, type = 'error') {
+        alertBox.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+    }
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        alertBox.innerHTML = '';
+
+        const name = document.getElementById('name').value.trim();
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+
+        if (!name) return showAlert('Please enter your full name.');
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showAlert('Please enter a valid email address.');
+        if (password.length < 8) return showAlert('Password must be at least 8 characters long.');
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner"></span> Creating account…';
+
+        try {
+            const resp = await fetch('/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ name, email, password }),
+                redirect: 'follow'
+            });
+
+            if (resp.redirected) {
+                window.location.href = resp.url;
+            } else {
+                const text = await resp.text();
+                showAlert(text || 'Registration failed. Please try again.');
+            }
+        } catch {
+            showAlert('Network error. Please try again.');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = 'Create Account';
+        }
+    });
+</script>
 </body>
 </html>
