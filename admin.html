@@ -1,23 +1,139 @@
 <!DOCTYPE html>
-<html>
-<head><title>Admin Panel</title><link rel="stylesheet" href="style.css"></head>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel — GST Portal</title>
+    <link rel="stylesheet" href="style.css">
+</head>
 <body>
-    <h2>Global GST Records</h2>
-    <div id="data">Loading...</div>
-    <script>
-        fetch('/admin-data')
-        .then(res => {
-            if(res.status === 403) throw new Error("Unauthorized");
-            return res.json();
-        })
-        .then(data => {
-            let html = "<table border='1'><tr><th>Name</th><th>GST No</th><th>Income</th><th>GST</th><th>Date</th></tr>";
-            data.forEach(row => {
-                html += `<tr><td>${row.name}</td><td>${row.gst_number}</td><td>₹${row.income}</td><td>₹${row.gst_amount}</td><td>${new Date(row.created_at).toLocaleDateString()}</td></tr>`;
-            });
-            document.getElementById("data").innerHTML = html + "</table>";
-        })
-        .catch(err => document.getElementById("data").innerHTML = "Access Denied: Admin only.");
-    </script>
+    <header class="top-header">
+        <div class="logo">GST Portal</div>
+        <div class="user">
+            <span class="user-name">Admin</span>
+            <a href="/logout">Logout</a>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="page-header">
+            <div>
+                <h1>Admin Panel</h1>
+                <p>View all GST records across all users</p>
+            </div>
+            <div id="summary-badge"></div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <h2>All GST Records</h2>
+                <input type="text" id="searchBox" placeholder="Search by name or GSTIN…"
+                       style="width:220px; margin-bottom:0;" oninput="filterTable()">
+            </div>
+
+            <div id="data-container">
+                <div class="empty-state">
+                    <div class="empty-icon">⏳</div>
+                    <p>Loading records…</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    let allData = [];
+
+    async function init() {
+        // Check admin access first
+        const sessionResp = await fetch('/session-check');
+        const session = await sessionResp.json();
+
+        if (!session.authenticated || !session.is_admin) {
+            document.querySelector('.container').innerHTML =
+                '<div class="alert alert-error" style="margin-top:32px;">⛔ Access Denied: Admin only area.</div>';
+            return;
+        }
+
+        loadData();
+    }
+
+    function fmt(n) {
+        return '₹' + parseFloat(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    }
+
+    async function loadData() {
+        try {
+            const resp = await fetch('/admin-data');
+            if (resp.status === 403) throw new Error('Forbidden');
+            allData = await resp.json();
+
+            const total = allData.reduce((s, r) => s + parseFloat(r.gst_amount), 0);
+            document.getElementById('summary-badge').innerHTML =
+                `<span class="badge badge-green">${allData.length} records · ${fmt(total)} total GST</span>`;
+
+            renderTable(allData);
+        } catch (err) {
+            document.getElementById('data-container').innerHTML =
+                '<div class="alert alert-error">Access Denied or failed to load records.</div>';
+        }
+    }
+
+    function renderTable(data) {
+        const container = document.getElementById('data-container');
+
+        if (data.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">🔍</div>
+                    <p>No records found.</p>
+                </div>`;
+            return;
+        }
+
+        let rows = data.map(r => {
+            const date = r.created_at
+                ? new Date(r.created_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })
+                : '—';
+            return `
+                <tr>
+                    <td><strong>${r.name}</strong></td>
+                    <td style="color:var(--muted); font-size:0.85rem;">${r.email}</td>
+                    <td><code style="font-size:0.85rem;">${r.gst_number}</code></td>
+                    <td>${fmt(r.income)}</td>
+                    <td><strong>${fmt(r.gst_amount)}</strong></td>
+                    <td style="color:var(--muted); font-size:0.85rem;">${date}</td>
+                </tr>`;
+        }).join('');
+
+        container.innerHTML = `
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>GSTIN</th>
+                            <th>Income</th>
+                            <th>GST Amount</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+    }
+
+    function filterTable() {
+        const q = document.getElementById('searchBox').value.toLowerCase();
+        const filtered = allData.filter(r =>
+            r.name.toLowerCase().includes(q) ||
+            r.gst_number.toLowerCase().includes(q) ||
+            (r.email && r.email.toLowerCase().includes(q))
+        );
+        renderTable(filtered);
+    }
+
+    init();
+</script>
 </body>
 </html>
