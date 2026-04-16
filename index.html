@@ -18,24 +18,27 @@
         <h2>Create account</h2>
         <p class="subtitle">Start filing your GST returns online</p>
 
-        <div id="alert-box"></div>
+        <div id="alert-box" role="alert" aria-live="polite"></div>
 
-        <form id="registerForm" action="/register" method="POST" novalidate>
-            <div class="form-group">
-                <label for="name">Full Name</label>
-                <input type="text" id="name" name="name" placeholder="e.g. Rajesh Kumar" required autocomplete="name">
-            </div>
-            <div class="form-group">
-                <label for="email">Email Address</label>
-                <input type="email" id="email" name="email" placeholder="you@example.com" required autocomplete="email">
-            </div>
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" placeholder="Min. 8 characters" required autocomplete="new-password" minlength="8">
-            </div>
+        <div class="form-group">
+            <label for="name">Full Name</label>
+            <input type="text" id="name" name="name"
+                   placeholder="e.g. Rajesh Kumar" required autocomplete="name">
+        </div>
+        <div class="form-group">
+            <label for="email">Email Address</label>
+            <input type="email" id="email" name="email"
+                   placeholder="you@example.com" required autocomplete="email">
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password"
+                   placeholder="Min. 8 characters" required autocomplete="new-password" minlength="8">
+        </div>
 
-            <button type="submit" class="btn btn-primary" id="submitBtn">Create Account</button>
-        </form>
+        <button type="button" class="btn btn-primary" id="submitBtn" onclick="handleRegister()">
+            Create Account
+        </button>
 
         <div class="auth-footer">
             Already have an account? <a href="login.html">Sign in</a>
@@ -44,50 +47,58 @@
 </div>
 
 <script>
-    const form = document.getElementById('registerForm');
+    const alertBox  = document.getElementById('alert-box');
     const submitBtn = document.getElementById('submitBtn');
-    const alertBox = document.getElementById('alert-box');
 
     function showAlert(message, type = 'error') {
-        alertBox.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+        // Use textContent via a text node to prevent XSS
+        const div = document.createElement('div');
+        div.className = `alert alert-${type}`;
+        div.textContent = message;
+        alertBox.innerHTML = '';
+        alertBox.appendChild(div);
     }
 
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
+    function isValidEmail(email) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    }
+
+    async function handleRegister() {
         alertBox.innerHTML = '';
 
-        const name = document.getElementById('name').value.trim();
-        const email = document.getElementById('email').value.trim();
+        const name     = document.getElementById('name').value.trim();
+        const email    = document.getElementById('email').value.trim();
         const password = document.getElementById('password').value;
 
-        if (!name) return showAlert('Please enter your full name.');
-        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showAlert('Please enter a valid email address.');
-        if (password.length < 8) return showAlert('Password must be at least 8 characters long.');
+        if (!name)                   return showAlert('Please enter your full name.');
+        if (!isValidEmail(email))    return showAlert('Please enter a valid email address.');
+        if (password.length < 8)     return showAlert('Password must be at least 8 characters long.');
 
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="spinner"></span> Creating account…';
+        submitBtn.innerHTML = '<span class="spinner"></span> Creating account&hellip;';
 
         try {
             const resp = await fetch('/register', {
-                method: 'POST',
+                method:  'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({ name, email, password }),
+                body:    new URLSearchParams({ name, email, password }),
                 redirect: 'follow'
             });
 
             if (resp.redirected) {
                 window.location.href = resp.url;
-            } else {
-                const text = await resp.text();
-                showAlert(text || 'Registration failed. Please try again.');
+                return;
             }
+
+            const text = await resp.text();
+            showAlert(text || 'Registration failed. Please try again.');
         } catch {
-            showAlert('Network error. Please try again.');
+            showAlert('Network error. Please check your connection and try again.');
         } finally {
             submitBtn.disabled = false;
             submitBtn.innerHTML = 'Create Account';
         }
-    });
+    }
 </script>
 </body>
 </html>
