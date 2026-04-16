@@ -11,6 +11,7 @@
         <div class="logo">GST Portal</div>
         <div class="user">
             <span class="user-name">Admin</span>
+            <a href="profile.html">Profile</a>
             <a href="/logout">Logout</a>
         </div>
     </header>
@@ -27,8 +28,10 @@
         <div class="panel">
             <div class="panel-header">
                 <h2>All GST Records</h2>
-                <input type="text" id="searchBox" placeholder="Search by name or GSTIN…"
-                       style="width:220px; margin-bottom:0;" oninput="filterTable()">
+                <input type="text" id="searchBox"
+                       placeholder="Search by name, email or GSTIN…"
+                       style="width:240px; margin-bottom:0;"
+                       aria-label="Search records">
             </div>
 
             <div id="data-container">
@@ -43,41 +46,75 @@
 <script>
     let allData = [];
 
-    async function init() {
-        // Check admin access first
-        const sessionResp = await fetch('/session-check');
-        const session = await sessionResp.json();
-
-        if (!session.authenticated || !session.is_admin) {
-            document.querySelector('.container').innerHTML =
-                '<div class="alert alert-error" style="margin-top:32px;">⛔ Access Denied: Admin only area.</div>';
-            return;
-        }
-
-        loadData();
-    }
-
+    /* ─── Helpers ──────────────────────────────────────────────── */
     function fmt(n) {
         return '₹' + parseFloat(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
     }
 
+    function fmtDate(raw) {
+        if (!raw) return '—';
+        const d = new Date(raw);
+        return isNaN(d.getTime())
+            ? '—'
+            : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    /* ─── Init ─────────────────────────────────────────────────── */
+    async function init() {
+        try {
+            const sessionResp = await fetch('/session-check');
+            if (!sessionResp.ok) throw new Error('Session error');
+            const session = await sessionResp.json();
+
+            if (!session.authenticated) {
+                window.location.href = '/login.html';
+                return;
+            }
+
+            if (!session.is_admin) {
+                document.querySelector('.container').innerHTML =
+                    '<div class="alert alert-error" style="margin-top:32px;">⛔ Access Denied: Admin only area.</div>';
+                return;
+            }
+
+            loadData();
+        } catch {
+            window.location.href = '/login.html';
+        }
+    }
+
+    /* ─── Load Data ────────────────────────────────────────────── */
     async function loadData() {
         try {
             const resp = await fetch('/admin-data');
             if (resp.status === 403) throw new Error('Forbidden');
+            if (!resp.ok) throw new Error('Server error');
             allData = await resp.json();
 
-            const total = allData.reduce((s, r) => s + parseFloat(r.gst_amount), 0);
+            const total = allData.reduce((s, r) => s + (parseFloat(r.gst_amount) || 0), 0);
             document.getElementById('summary-badge').innerHTML =
-                `<span class="badge badge-green">${allData.length} records · ${fmt(total)} total GST</span>`;
+                `<span class="badge badge-green">${allData.length} records &middot; ${fmt(total)} total GST</span>`;
 
             renderTable(allData);
         } catch (err) {
             document.getElementById('data-container').innerHTML =
-                '<div class="alert alert-error">Access Denied or failed to load records.</div>';
+                `<div class="alert alert-error">
+                    ${err.message === 'Forbidden'
+                        ? '⛔ Access Denied: You do not have permission to view this data.'
+                        : 'Failed to load records. Please refresh the page.'}
+                </div>`;
         }
     }
 
+    /* ─── Render Table ─────────────────────────────────────────── */
     function renderTable(data) {
         const container = document.getElementById('data-container');
 
@@ -85,25 +122,20 @@
             container.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-icon">🔍</div>
-                    <p>No records found.</p>
+                    <p>No records found matching your search.</p>
                 </div>`;
             return;
         }
 
-        let rows = data.map(r => {
-            const date = r.created_at
-                ? new Date(r.created_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })
-                : '—';
-            return `
-                <tr>
-                    <td><strong>${r.name}</strong></td>
-                    <td style="color:var(--muted); font-size:0.85rem;">${r.email}</td>
-                    <td><code style="font-size:0.85rem;">${r.gst_number}</code></td>
-                    <td>${fmt(r.income)}</td>
-                    <td><strong>${fmt(r.gst_amount)}</strong></td>
-                    <td style="color:var(--muted); font-size:0.85rem;">${date}</td>
-                </tr>`;
-        }).join('');
+        const rows = data.map(r => `
+            <tr>
+                <td><strong>${escapeHtml(r.name || '—')}</strong></td>
+                <td style="color:var(--muted); font-size:0.85rem;">${escapeHtml(r.email || '—')}</td>
+                <td><code style="font-size:0.85rem;">${escapeHtml(r.gst_number || '—')}</code></td>
+                <td>${fmt(r.income || 0)}</td>
+                <td><strong>${fmt(r.gst_amount || 0)}</strong></td>
+                <td style="color:var(--muted); font-size:0.85rem;">${fmtDate(r.created_at)}</td>
+            </tr>`).join('');
 
         container.innerHTML = `
             <div class="table-wrap">
@@ -123,15 +155,24 @@
             </div>`;
     }
 
-    function filterTable() {
-        const q = document.getElementById('searchBox').value.toLowerCase();
-        const filtered = allData.filter(r =>
-            r.name.toLowerCase().includes(q) ||
-            r.gst_number.toLowerCase().includes(q) ||
-            (r.email && r.email.toLowerCase().includes(q))
-        );
-        renderTable(filtered);
-    }
+    /* ─── Search filter ────────────────────────────────────────── */
+    let searchTimer;
+    document.getElementById('searchBox').addEventListener('input', function () {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+            const q = this.value.toLowerCase().trim();
+            if (!q) {
+                renderTable(allData);
+                return;
+            }
+            const filtered = allData.filter(r =>
+                (r.name       || '').toLowerCase().includes(q) ||
+                (r.gst_number || '').toLowerCase().includes(q) ||
+                (r.email      || '').toLowerCase().includes(q)
+            );
+            renderTable(filtered);
+        }, 200); // debounce
+    });
 
     init();
 </script>
