@@ -1,42 +1,48 @@
 require("dotenv").config();
 const express = require("express");
-const mysql = require("mysql2");
+const mysql = require("mysql2/promise");
 const session = require("express-session");
 const bodyParser = require("body-parser");
 const bcrypt = require("bcrypt");
 const path = require("path");
 
 const app = express();
+const PORT = process.env.PORT || 5000;
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-app.use(session({
-    secret: process.env.SESSION_SECRET || "change_this_in_production",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        httpOnly: true,      // Prevents JS access to cookie (XSS protection)
-        secure: process.env.NODE_ENV === "production", // HTTPS only in prod
-        maxAge: 1000 * 60 * 60 * 2  // 2 hour session expiry
-    }
-}));
+app.use(
+    session({
+        secret: process.env.SESSION_SECRET || "change_this_in_production",
+        resave: false,
+        saveUninitialized: false,
+        cookie: {
+            httpOnly: true,
+            secure: false, // keep false for localhost
+            maxAge: 1000 * 60 * 60 * 2
+        }
+    })
+);
 
 // ─── MySQL Connection Pool ────────────────────────────────────────────────────
 const db = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
+    host: process.env.DB_HOST || "localhost",
+    user: process.env.DB_USER || "root",
+    password: process.env.DB_PASSWORD || "",
+    database: process.env.DB_NAME || "gstportal",
     waitForConnections: true,
     connectionLimit: 10,
-}).promise(); // Use promise-based API for cleaner async/await
+    queueLimit: 0
+});
 
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
 function requireAuth(req, res, next) {
-    if (!req.session.user) return res.status(401).json({ error: "Unauthorized" });
+    if (!req.session.user) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
     next();
 }
 
@@ -65,20 +71,20 @@ app.post("/register", async (req, res) => {
     }
 
     try {
-        const hashedPassword = await bcrypt.hash(password, 12); // 12 rounds (was 10)
+        const hashedPassword = await bcrypt.hash(password, 12);
 
         await db.query(
             "INSERT INTO users (name, email, password) VALUES (?, ?, ?)",
-            [name, email.toLowerCase().trim(), hashedPassword]
+            [name.trim(), email.toLowerCase().trim(), hashedPassword]
         );
 
-        res.redirect("/login.html");
+        return res.redirect("/login.html");
     } catch (err) {
         if (err.code === "ER_DUP_ENTRY") {
             return res.status(409).json({ error: "Email already registered" });
         }
         console.error("Register error:", err);
-        res.status(500).json({ error: "Registration failed. Please try again." });
+        return res.status(500).json({ error: "Registration failed. Please try again." });
     }
 });
 
@@ -91,36 +97,40 @@ app.post("/login", async (req, res) => {
     }
 
     try {
-        const [results] = await db.query(
+        const [rows] = await db.query(
             "SELECT * FROM users WHERE email = ?",
             [email.toLowerCase().trim()]
         );
 
-        // Always run bcrypt compare to prevent timing attacks
-        const dummyHash = "$2b$12$invalidhashfortimingattackprevention00000000000000000";
-        const user = results[0];
-        const hashToCompare = user ? user.password : dummyHash;
+        const user = rows[0];
 
-        const match = await bcrypt.compare(password, hashToCompare);
-
-        if (!user || !match) {
+        if (!user) {
             return res.status(401).json({ error: "Invalid email or password" });
         }
 
-        // Regenerate session on login to prevent session fixation
+        const match = await bcrypt.compare(password, user.password);
+
+        if (!match) {
+            return res.status(401).json({ error: "Invalid email or password" });
+        }
+
         req.session.regenerate((err) => {
-            if (err) return res.status(500).json({ error: "Login failed" });
+            if (err) {
+                return res.status(500).json({ error: "Login failed" });
+            }
+
             req.session.user = {
                 id: user.id,
                 name: user.name,
                 email: user.email,
-                is_admin: user.is_admin || false
+                is_admin: !!user.is_admin
             };
-            res.redirect("/dashboard.html");
+
+            return res.redirect("/dashboard.html");
         });
     } catch (err) {
         console.error("Login error:", err);
-        res.status(500).json({ error: "Login failed. Please try again." });
+        return res.status(500).json({ error: "Login failed. Please try again." });
     }
 });
 
@@ -132,12 +142,27 @@ app.get("/logout", (req, res) => {
     });
 });
 
-// ─── GST Calculation ─────────────────────────────────────────────────────────
+// ─── Session Check ────────────────────────────────────────────────────────────
+app.get("/session-check", (req, res) => {
+    if (req.session.user) {
+        return res.json({
+            authenticated: true,
+            id: req.session.user.id,
+            name: req.session.user.name,
+            email: req.session.user.email,
+            is_admin: req.session.user.is_admin
+        });
+    }
+
+    return res.json({ authenticated: false });
+});
+
+// ─── GST Calculation ──────────────────────────────────────────────────────────
 app.post("/calculate", requireAuth, async (req, res) => {
     const { gst_number, income, gst_rate } = req.body;
 
-    // Validate GST number format (basic Indian GSTIN: 15 chars)
     const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+
     if (!gstinRegex.test(gst_number)) {
         return res.status(400).json({ error: "Invalid GSTIN format" });
     }
@@ -161,74 +186,98 @@ app.post("/calculate", requireAuth, async (req, res) => {
             "INSERT INTO gst_records (user_id, gst_number, income, gst_amount) VALUES (?, ?, ?, ?)",
             [req.session.user.id, gst_number, incomeVal, gstAmount]
         );
-        res.redirect("/dashboard.html");
+
+        return res.redirect("/dashboard.html");
     } catch (err) {
         console.error("Calculate error:", err);
-        res.status(500).json({ error: "Failed to save GST record" });
+        return res.status(500).json({ error: "Failed to save GST record" });
     }
 });
 
 // ─── Dashboard Data ───────────────────────────────────────────────────────────
 app.get("/dashboard-data", requireAuth, async (req, res) => {
     try {
-        const [summary] = await db.query(
-            `SELECT
-                IFNULL(SUM(income), 0)     AS total_income,
-                IFNULL(SUM(gst_amount), 0) AS total_gst,
-                COUNT(*)                   AS total_returns
-             FROM gst_records
-             WHERE user_id = ?`,
+        const [summaryRows] = await db.query(
+            `
+            SELECT
+                COALESCE(SUM(income), 0) AS total_income,
+                COALESCE(SUM(gst_amount), 0) AS total_gst,
+                COUNT(*) AS total_returns
+            FROM gst_records
+            WHERE user_id = ?
+            `,
             [req.session.user.id]
         );
 
-        const [records] = await db.query(
-            `SELECT id, gst_number, income, gst_amount, created_at
-             FROM gst_records
-             WHERE user_id = ?
-             ORDER BY created_at DESC
-             LIMIT 10`,
+        const [recordRows] = await db.query(
+            `
+            SELECT id, gst_number, income, gst_amount, created_at
+            FROM gst_records
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            `,
             [req.session.user.id]
         );
 
-        res.json({ ...summary[0], records, user: req.session.user.name });
+        return res.json({
+            summary: {
+                total_income: parseFloat(summaryRows[0].total_income || 0),
+                total_gst: parseFloat(summaryRows[0].total_gst || 0),
+                total_returns: parseInt(summaryRows[0].total_returns || 0)
+            },
+            records: recordRows
+        });
     } catch (err) {
         console.error("Dashboard data error:", err);
-        res.status(500).json({ error: "Failed to fetch dashboard data" });
+        return res.status(500).json({ error: "Failed to load dashboard data" });
     }
 });
 
-// ─── Admin Data (protected) ───────────────────────────────────────────────────
+// ─── Admin Data ───────────────────────────────────────────────────────────────
 app.get("/admin-data", requireAdmin, async (req, res) => {
     try {
-        const [results] = await db.query(
-            `SELECT
+        const [rows] = await db.query(
+            `
+            SELECT
+                gst_records.id,
                 users.name,
                 users.email,
                 gst_records.gst_number,
                 gst_records.income,
                 gst_records.gst_amount,
                 gst_records.created_at
-             FROM gst_records
-             JOIN users ON users.id = gst_records.user_id
-             ORDER BY gst_records.created_at DESC`
+            FROM gst_records
+            INNER JOIN users ON gst_records.user_id = users.id
+            ORDER BY gst_records.created_at DESC
+            `
         );
-        res.json(results);
+
+        return res.json(rows);
     } catch (err) {
         console.error("Admin data error:", err);
-        res.status(500).json({ error: "Failed to fetch admin data" });
+        return res.status(500).json({ error: "Failed to load admin data" });
     }
 });
 
-// ─── Session Check (for frontend auth guards) ─────────────────────────────────
-app.get("/session-check", (req, res) => {
-    if (req.session.user) {
-        res.json({ authenticated: true, name: req.session.user.name, is_admin: req.session.user.is_admin });
-    } else {
-        res.json({ authenticated: false });
+// ─── Optional Health Check ────────────────────────────────────────────────────
+app.get("/health", async (req, res) => {
+    try {
+        await db.query("SELECT 1");
+        return res.json({ status: "ok", database: "connected" });
+    } catch (err) {
+        console.error("Health check error:", err);
+        return res.status(500).json({ status: "error", database: "disconnected" });
     }
 });
 
-// ─── Server ───────────────────────────────────────────────────────────────────
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
+// ─── Start Server ─────────────────────────────────────────────────────────────
+app.listen(PORT, "0.0.0.0", async () => {
+    console.log(`✅ Server running on http://localhost:${PORT}`);
+
+    try {
+        await db.query("SELECT 1");
+        console.log("✅ MySQL database connected successfully");
+    } catch (err) {
+        console.error("❌ MySQL database connection failed:", err.message);
+    }
 });
