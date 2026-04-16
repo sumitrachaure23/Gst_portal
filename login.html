@@ -18,20 +18,22 @@
         <h2>Welcome back</h2>
         <p class="subtitle">Sign in to manage your GST returns</p>
 
-        <div id="alert-box"></div>
+        <div id="alert-box" role="alert" aria-live="polite"></div>
 
-        <form id="loginForm" action="/login" method="POST" novalidate>
-            <div class="form-group">
-                <label for="email">Email Address</label>
-                <input type="email" id="email" name="email" placeholder="you@example.com" required autocomplete="email">
-            </div>
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" placeholder="Your password" required autocomplete="current-password">
-            </div>
+        <div class="form-group">
+            <label for="email">Email Address</label>
+            <input type="email" id="email" name="email"
+                   placeholder="you@example.com" required autocomplete="email">
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password"
+                   placeholder="Your password" required autocomplete="current-password">
+        </div>
 
-            <button type="submit" class="btn btn-primary" id="submitBtn">Sign In</button>
-        </form>
+        <button type="button" class="btn btn-primary" id="submitBtn" onclick="handleLogin()">
+            Sign In
+        </button>
 
         <div class="auth-footer">
             Don't have an account? <a href="index.html">Register</a>
@@ -40,48 +42,60 @@
 </div>
 
 <script>
-    const form = document.getElementById('loginForm');
+    const alertBox  = document.getElementById('alert-box');
     const submitBtn = document.getElementById('submitBtn');
-    const alertBox = document.getElementById('alert-box');
 
     function showAlert(message, type = 'error') {
-        alertBox.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+        alertBox.innerHTML = `<div class="alert alert-${type}">${escapeHtml(message)}</div>`;
     }
 
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    // Allow Enter key to submit
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleLogin();
+    });
+
+    async function handleLogin() {
         alertBox.innerHTML = '';
 
-        const email = document.getElementById('email').value.trim();
+        const email    = document.getElementById('email').value.trim();
         const password = document.getElementById('password').value;
 
-        if (!email) return showAlert('Please enter your email address.');
+        if (!email)    return showAlert('Please enter your email address.');
         if (!password) return showAlert('Please enter your password.');
 
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="spinner"></span> Signing in…';
+        submitBtn.innerHTML = '<span class="spinner"></span> Signing in&hellip;';
 
         try {
             const resp = await fetch('/login', {
-                method: 'POST',
+                method:  'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({ email, password }),
+                body:    new URLSearchParams({ email, password }),
                 redirect: 'follow'
             });
 
             if (resp.redirected) {
                 window.location.href = resp.url;
-            } else {
-                const text = await resp.text();
-                showAlert(text || 'Invalid email or password.');
+                return; // prevent re-enabling button during redirect
             }
+
+            const text = await resp.text();
+            showAlert(text || 'Invalid email or password.');
         } catch {
-            showAlert('Network error. Please try again.');
+            showAlert('Network error. Please check your connection and try again.');
         } finally {
             submitBtn.disabled = false;
             submitBtn.innerHTML = 'Sign In';
         }
-    });
+    }
 </script>
 </body>
 </html>
